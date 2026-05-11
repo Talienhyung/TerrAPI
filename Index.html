@@ -208,6 +208,7 @@
   <script>
     const MAX_POINTS = 50;
     const history = { temp: [], hum: [], labels: [] };
+    const lastValue = { temp: null, hum: null };
 
     const tempEl   = document.getElementById('temp-value');
     const humEl    = document.getElementById('hum-value');
@@ -274,9 +275,13 @@
     function updateUI(data) {
       const temp = data.temperature;
       const hum  = data.humidity;
+      const tempDisplay = temp.toFixed(1);
+      const humDisplay  = hum.toFixed(1);
+      const tempChanged = lastValue.temp !== null && lastValue.temp !== tempDisplay;
+      const humChanged  = lastValue.hum  !== null && lastValue.hum  !== humDisplay;
 
-      tempEl.textContent = temp.toFixed(1);
-      humEl.textContent  = hum.toFixed(1);
+      tempEl.textContent = tempDisplay;
+      humEl.textContent  = humDisplay;
 
       tempBar.style.width = Math.min((temp / 60) * 100, 100) + '%';
       humBar.style.width  = Math.min(hum, 100) + '%';
@@ -292,13 +297,20 @@
       }
       drawChart();
 
-      // Flash animation
-      [cardTemp, cardHum].forEach(c => {
-        c.classList.remove('updated');
-        void c.offsetWidth;  // reflow pour relancer l'animation
-        c.classList.add('updated');
-      });
+      // Flash animation uniquement si la valeur a changé
+      if (tempChanged) {
+        cardTemp.classList.remove('updated');
+        void cardTemp.offsetWidth;
+        cardTemp.classList.add('updated');
+      }
+      if (humChanged) {
+        cardHum.classList.remove('updated');
+        void cardHum.offsetWidth;
+        cardHum.classList.add('updated');
+      }
 
+      lastValue.temp = tempDisplay;
+      lastValue.hum  = humDisplay;
       lastUpd.textContent = `Dernière mise à jour : ${label}`;
     }
 
