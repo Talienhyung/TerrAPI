@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DHT11 – Données temps réel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-bottom: 40px;
+    }
+
+    .cards {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 32px 40px;
+      text-align: center;
+      min-width: 200px;
+      transition: transform 0.2s;
+    }
+
+    .card:hover { transform: translateY(-2px); }
+
+    .card-icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .card-label {
+      font-size: 0.8rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 3rem;
+      font-weight: 700;
+      line-height: 1;
+      transition: color 0.4s;
+    }
+
+    .card-unit {
+      font-size: 1.2rem;
+      font-weight: 400;
+      opacity: 0.6;
+    }
+
+    #temp-value { color: #f97316; }
+    #hum-value  { color: #38bdf8; }
+
+    /* Barre de progression */
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #334155;
+      border-radius: 3px;
+      margin-top: 16px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+
+    #temp-bar  { background: #f97316; }
+    #hum-bar   { background: #38bdf8; }
+
+    /* Historique graphique simple */
+    .history-section {
+      width: 100%;
+      max-width: 700px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .history-section h2 {
+      font-size: 0.85rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 140px;
+      display: block;
+    }
+
+    /* Statut connexion */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #64748b;
+      transition: background 0.4s;
+    }
+
+    .dot.connected    { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .dot.disconnected { background: #ef4444; }
+
+    .last-update {
+      font-size: 0.8rem;
+      color: #475569;
+      margin-top: 8px;
+    }
+
+    /* Animation flash lors d'une mise à jour */
+    @keyframes flash {
+      0%   { background: #1e3a5f; }
+      100% { background: #1e293b; }
+    }
+    .card.updated { animation: flash 0.5s ease; }
+  </style>
+</head>
+<body>
+
+  <h1>🌡 DHT11 — Dashboard</h1>
+  <p class="subtitle">Données ESP32 en temps réel</p>
+
+  <div class="cards">
+    <!-- Température -->
+    <div class="card" id="card-temp">
+      <span class="card-icon">🌡</span>
+      <div class="card-label">Température</div>
+      <div class="card-value">
+        <span id="temp-value">--</span>
+        <span class="card-unit">°C</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="temp-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Humidité -->
+    <div class="card" id="card-hum">
+      <span class="card-icon">💧</span>
+      <div class="card-label">Humidité</div>
+      <div class="card-value">
+        <span id="hum-value">--</span>
+        <span class="card-unit">%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="hum-bar" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Graphique historique -->
+  <div class="history-section">
+    <h2>Historique (50 dernières mesures)</h2>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <!-- Statut -->
+  <div class="status-bar">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">Connexion au serveur…</span>
+  </div>
+  <div class="last-update" id="last-update"></div>
+
+  <script>
+    const MAX_POINTS = 50;
+    const history = { temp: [], hum: [], labels: [] };
+
+    const tempEl   = document.getElementById('temp-value');
+    const humEl    = document.getElementById('hum-value');
+    const tempBar  = document.getElementById('temp-bar');
+    const humBar   = document.getElementById('hum-bar');
+    const dot      = document.getElementById('dot');
+    const statusTx = document.getElementById('status-text');
+    const lastUpd  = document.getElementById('last-update');
+    const cardTemp = document.getElementById('card-temp');
+    const cardHum  = document.getElementById('card-hum');
+
+    // ── Mini graphique canvas ──
+    const canvas  = document.getElementById('chart');
+    const ctx     = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = 140;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', () => { resizeCanvas(); drawChart(); });
+
+    function drawChart() {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      function drawLine(data, color, minVal, maxVal) {
+        if (data.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin  = 'round';
+        data.forEach((v, i) => {
+          const x = (i / (MAX_POINTS - 1)) * W;
+          const y = H - ((v - minVal) / (maxVal - minVal)) * (H - 20) - 10;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Remplissage dégradé léger
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, color + '40');
+        grad.addColorStop(1, color + '00');
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+
+      // Grille horizontale
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 0.5;
+      [0.25, 0.5, 0.75].forEach(r => {
+        ctx.beginPath();
+        ctx.moveTo(0, H * r);
+        ctx.lineTo(W, H * r);
+        ctx.stroke();
+      });
+
+      drawLine(history.temp, '#f97316', 0,  60);
+      drawLine(history.hum,  '#38bdf8', 0, 100);
+    }
+
+    // ── Mise à jour de l'UI ──
+    function updateUI(data) {
+      const temp = data.temperature;
+      const hum  = data.humidity;
+
+      tempEl.textContent = temp.toFixed(1);
+      humEl.textContent  = hum.toFixed(1);
+
+      tempBar.style.width = Math.min((temp / 60) * 100, 100) + '%';
+      humBar.style.width  = Math.min(hum, 100) + '%';
+
+      // Historique
+      const now = new Date(data.receivedAt || Date.now());
+      const label = now.toLocaleTimeString('fr-FR');
+      history.temp.push(temp);
+      history.hum.push(hum);
+      history.labels.push(label);
+      if (history.temp.length > MAX_POINTS) {
+        history.temp.shift(); history.hum.shift(); history.labels.shift();
+      }
+      drawChart();
+
+      // Flash animation
+      [cardTemp, cardHum].forEach(c => {
+        c.classList.remove('updated');
+        void c.offsetWidth;  // reflow pour relancer l'animation
+        c.classList.add('updated');
+      });
+
+      lastUpd.textContent = `Dernière mise à jour : ${label}`;
+    }
+
+    // ── Connexion SSE ──
+    function connect() {
+      const evtSource = new EventSource('/api/stream');
+
+      evtSource.onopen = () => {
+        dot.className = 'dot connected';
+        statusTx.textContent = 'Connecté — en attente de données…';
+      };
+
+      evtSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        statusTx.textContent = 'En direct ✓';
+        updateUI(data);
+      };
+
+      evtSource.onerror = () => {
+        dot.className = 'dot disconnected';
+        statusTx.textContent = 'Déconnecté — reconnexion dans 3s…';
+        evtSource.close();
+        setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
