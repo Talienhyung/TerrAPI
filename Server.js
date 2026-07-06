@@ -1,9 +1,21 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { Op } = require('sequelize');
 const app = express();
 const { sequelize, Measure } = require('./db');
 const PORT = 3000;
+
+// Plages de temps acceptées par /api/history (basées sur receivedAt, seul
+// horodatage fiable côté serveur — le champ `timestamp` envoyé par l'ESP32
+// est juste millis() depuis son démarrage, pas une date réelle)
+const HISTORY_RANGES_MS = {
+  '1h': 60 * 60 * 1000,
+  '6h': 6 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+};
 
 app.use(cors());
 app.use(express.json());
@@ -59,6 +71,30 @@ app.post('/api/data', (req, res) => {
 // ─────────────────────────────────────────
 app.get('/api/data', (req, res) => {
   res.json(lastData);
+});
+
+// ─────────────────────────────────────────
+// Route GET : historique des mesures depuis la DB (pour les graphs)
+// ─────────────────────────────────────────
+app.get('/api/history', async (req, res) => {
+  const range = req.query.range;
+  const where = {};
+  if (HISTORY_RANGES_MS[range]) {
+    where.receivedAt = { [Op.gte]: new Date(Date.now() - HISTORY_RANGES_MS[range]) };
+  }
+
+  try {
+    const rows = await Measure.findAll({
+      where,
+      order: [['receivedAt', 'ASC']],
+      limit: 5000,
+      attributes: ['temperature', 'humidity', 'receivedAt'],
+    });
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erreur lors de la récupération de l'historique" });
+  }
 });
 
 // ─────────────────────────────────────────

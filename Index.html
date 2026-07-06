@@ -139,6 +139,74 @@
         display: block;
       }
 
+      /* Historique complet (base de données) */
+      .db-history-section {
+        width: 100%;
+        max-width: 900px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+      }
+
+      .db-history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .db-history-header h2 {
+        font-size: 0.85rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .range-buttons {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .range-btn {
+        background: #0f172a;
+        border: 1px solid #334155;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        padding: 6px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+      }
+
+      .range-btn:hover {
+        background: #334155;
+        color: #e2e8f0;
+      }
+
+      .range-btn.active {
+        background: #38bdf8;
+        border-color: #38bdf8;
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      .db-chart-wrap {
+        position: relative;
+        width: 100%;
+        height: 320px;
+      }
+
+      .db-history-status {
+        font-size: 0.8rem;
+        color: #475569;
+        margin-top: 12px;
+      }
+
       /* Statut connexion */
       .status-bar {
         display: flex;
@@ -222,6 +290,26 @@
       <canvas id="chart"></canvas>
     </div>
 
+    <!-- Historique complet (base de données) -->
+    <div class="db-history-section">
+      <div class="db-history-header">
+        <h2>Historique enregistré (base de données)</h2>
+        <div class="range-buttons">
+          <button class="range-btn" data-range="1h">1h</button>
+          <button class="range-btn" data-range="6h">6h</button>
+          <button class="range-btn active" data-range="24h">24h</button>
+          <button class="range-btn" data-range="7d">7j</button>
+          <button class="range-btn" data-range="30d">30j</button>
+          <button class="range-btn" data-range="all">Tout</button>
+          <button class="range-btn" id="reset-zoom-btn">Réinitialiser le zoom</button>
+        </div>
+      </div>
+      <div class="db-chart-wrap">
+        <canvas id="db-chart"></canvas>
+      </div>
+      <div class="db-history-status" id="db-history-status">Chargement…</div>
+    </div>
+
     <!-- Statut -->
     <div class="status-bar">
       <div class="dot" id="dot"></div>
@@ -229,6 +317,9 @@
     </div>
     <div class="last-update" id="last-update"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script>
       const MAX_POINTS = 50;
       const history = { temp: [], hum: [], labels: [] };
@@ -333,6 +424,115 @@
 
         lastUpd.textContent = `Dernière mise à jour : ${label}`;
       }
+
+      // ── Historique complet depuis la DB (graph interactif Chart.js) ──
+      const dbChartCanvas = document.getElementById("db-chart");
+      const dbHistoryStatus = document.getElementById("db-history-status");
+      const rangeButtons = document.querySelectorAll(".range-btn[data-range]");
+      let dbChart = null;
+
+      function renderDbChart(rows) {
+        const points = rows.map((r) => ({ x: new Date(r.receivedAt), temp: r.temperature, hum: r.humidity }));
+
+        if (dbChart) {
+          dbChart.destroy();
+        }
+
+        dbChart = new Chart(dbChartCanvas.getContext("2d"), {
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: "Température (°C)",
+                data: points.map((p) => ({ x: p.x, y: p.temp })),
+                borderColor: "#f97316",
+                backgroundColor: "#f9731633",
+                yAxisID: "yTemp",
+                pointRadius: 0,
+                borderWidth: 2,
+                tension: 0.25,
+              },
+              {
+                label: "Humidité (%)",
+                data: points.map((p) => ({ x: p.x, y: p.hum })),
+                borderColor: "#38bdf8",
+                backgroundColor: "#38bdf833",
+                yAxisID: "yHum",
+                pointRadius: 0,
+                borderWidth: 2,
+                tension: 0.25,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: "index", intersect: false },
+            scales: {
+              x: {
+                type: "time",
+                time: { tooltipFormat: "dd/MM/yyyy HH:mm:ss" },
+                ticks: { color: "#64748b" },
+                grid: { color: "#334155" },
+              },
+              yTemp: {
+                position: "left",
+                ticks: { color: "#f97316" },
+                grid: { color: "#334155" },
+                title: { display: true, text: "°C", color: "#f97316" },
+              },
+              yHum: {
+                position: "right",
+                ticks: { color: "#38bdf8" },
+                grid: { display: false },
+                title: { display: true, text: "%", color: "#38bdf8" },
+              },
+            },
+            plugins: {
+              legend: { labels: { color: "#e2e8f0" } },
+              zoom: {
+                pan: { enabled: true, mode: "x" },
+                zoom: {
+                  wheel: { enabled: true },
+                  pinch: { enabled: true },
+                  mode: "x",
+                },
+              },
+            },
+          },
+        });
+      }
+
+      async function loadHistory(range) {
+        dbHistoryStatus.textContent = "Chargement…";
+        try {
+          const res = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const rows = await res.json();
+          renderDbChart(rows);
+          dbHistoryStatus.textContent = rows.length
+            ? `${rows.length} mesure(s) affichée(s) — molette pour zoomer, glisser pour déplacer`
+            : "Aucune donnée sur cette période";
+        } catch (err) {
+          console.error(err);
+          dbHistoryStatus.textContent = "Erreur lors du chargement de l'historique";
+        }
+      }
+
+      rangeButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          rangeButtons.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          loadHistory(btn.dataset.range);
+        });
+      });
+
+      document.getElementById("reset-zoom-btn").addEventListener("click", () => {
+        if (dbChart) dbChart.resetZoom();
+      });
+
+      loadHistory("24h");
 
       // ── Connexion SSE ──
       function connect() {
