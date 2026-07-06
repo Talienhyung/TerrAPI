@@ -2,9 +2,9 @@
   "name": "dht11-api-server",
   "version": "1.0.0",
   "description": "Serveur API REST pour données DHT11 via ESP32",
-  "main": "server.js",
+  "main": "Server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node Server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
