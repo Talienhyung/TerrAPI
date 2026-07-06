@@ -517,6 +517,16 @@
       const NO_AGGREGATE_RANGES = new Set(["5m"]); // plages courtes : valeurs brutes
       const TABLE_MAX_ROWS = 500;
 
+      // Durées des plages (miroir de HISTORY_RANGES_MS côté serveur) — fenêtre glissante en direct
+      const RANGE_MS = {
+        "5m": 5 * 60 * 1000,
+        "1h": 60 * 60 * 1000,
+        "6h": 6 * 60 * 60 * 1000,
+        "24h": 24 * 60 * 60 * 1000,
+        "7d": 7 * 24 * 60 * 60 * 1000,
+        "30d": 30 * 24 * 60 * 60 * 1000,
+      };
+
       const panels = document.getElementById("panels");
       const historyStatus = document.getElementById("history-status");
       const tableBody = document.getElementById("table-body");
@@ -526,6 +536,8 @@
       let rawPoints = []; // { x: Date, temp, hum }
       let fullRange = { min: 0, max: 0 };
       let aggregateEnabled = true;
+      let currentRange = "24h";
+      let isZoomed = false; // en zoom/pan, le direct n'écrase pas la vue
 
       // Regroupe les points en BUCKET_COUNT tranches sur [xMin, xMax], moyenne par tranche
       function computeBuckets(points, xMin, xMax) {
@@ -572,8 +584,18 @@
         };
       }
 
-      // Vue tableau : le pendant accessible des graphiques (textContent uniquement)
+      // Vue tableau : le pendant accessible des graphiques (textContent uniquement).
+      // Reconstruite seulement quand elle est ouverte — inutile de régénérer 500 lignes
+      // toutes les 2 s pour un tableau replié.
+      const tableView = document.querySelector("details.table-view");
+      let tableRows = [];
+      tableView.addEventListener("toggle", () => {
+        if (tableView.open) renderTable(tableRows);
+      });
+
       function renderTable(rows) {
+        tableRows = rows;
+        if (!tableView.open) return;
         tableBody.replaceChildren();
         const slice = rows.slice(-TABLE_MAX_ROWS);
         slice.forEach((r) => {
@@ -720,17 +742,30 @@
         charts.forEach((c) => {
           if (c !== source) c.zoomScale("x", { min, max }, "none");
         });
+        isZoomed = true;
         resetZoomBtn.hidden = false;
         if (aggregateEnabled) applySeries(computeBuckets(rawPoints, min, max));
       }
 
       resetZoomBtn.addEventListener("click", () => {
         charts.forEach((c) => c.resetZoom("none"));
+        isZoomed = false;
         resetZoomBtn.hidden = true;
         applySeries(currentSeries(fullRange.min, fullRange.max));
       });
 
+      function updateStatus(count) {
+        historyStatus.textContent = count
+          ? `${count} mesure(s) — ${
+              aggregateEnabled
+                ? "moyennées par tranche de 1 % de la période affichée"
+                : "valeurs brutes"
+            }, mises à jour en direct. Molette pour zoomer, glisser pour déplacer.`
+          : "Aucune donnée sur cette période.";
+      }
+
       async function loadHistory(range) {
+        currentRange = range;
         panels.classList.add("is-loading");
         try {
           const res = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
@@ -748,16 +783,10 @@
           aggregateEnabled = !NO_AGGREGATE_RANGES.has(range);
 
           charts.forEach((c) => c.resetZoom("none"));
+          isZoomed = false;
           resetZoomBtn.hidden = true;
           applySeries(currentSeries(fullRange.min, fullRange.max));
-
-          historyStatus.textContent = rows.length
-            ? `${rows.length} mesure(s) — ${
-                aggregateEnabled
-                  ? "moyennées par tranche de 1 % de la période affichée"
-                  : "valeurs brutes"
-              }. Molette pour zoomer, glisser pour déplacer.`
-            : "Aucune donnée sur cette période.";
+          updateStatus(rawPoints.length);
         } catch (err) {
           console.error(err);
           historyStatus.textContent = "Erreur lors du chargement de l'historique.";
@@ -776,19 +805,47 @@
 
       loadHistory("24h");
 
+      // Chaque mesure SSE alimente aussi l'historique : fenêtre glissante sur la
+      // plage choisie, sans toucher à la vue si l'utilisateur est en zoom/pan
+      function appendToHistory(data) {
+        if (!data.receivedAt) return;
+        const p = { x: new Date(data.receivedAt), temp: data.temperature, hum: data.humidity };
+        const t = p.x.getTime();
+        // Doublon possible : le serveur renvoie la dernière mesure à la connexion
+        if (rawPoints.length && t <= rawPoints[rawPoints.length - 1].x.getTime()) return;
+        rawPoints.push(p);
+
+        const spanMs = RANGE_MS[currentRange];
+        if (spanMs) {
+          const cutoff = t - spanMs;
+          while (rawPoints.length && rawPoints[0].x.getTime() < cutoff) rawPoints.shift();
+        }
+        fullRange = { min: rawPoints[0].x.getTime(), max: t };
+
+        if (isZoomed) return;
+        applySeries(currentSeries(fullRange.min, fullRange.max));
+        updateStatus(rawPoints.length);
+      }
+
       // ══════════════ Connexion SSE ══════════════
+      let wasConnected = false;
+
       function connect() {
         const evtSource = new EventSource("/api/stream");
 
         evtSource.onopen = () => {
           dot.className = "dot connected";
           statusTx.textContent = "Connecté — en attente de données…";
+          // Après une coupure, recharge l'historique pour combler le trou
+          if (wasConnected) loadHistory(currentRange);
+          wasConnected = true;
         };
 
         evtSource.onmessage = (e) => {
           const data = JSON.parse(e.data);
           statusTx.textContent = "En direct";
           updateTiles(data);
+          appendToHistory(data);
         };
 
         evtSource.onerror = () => {
