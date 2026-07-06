@@ -736,19 +736,34 @@
         renderTable(rows);
       }
 
+      // resetZoom() et zoomScale() déclenchent aussi onZoom/PanComplete : ce garde
+      // évite que syncWindow prenne une opération programmatique pour un zoom
+      // utilisateur (ce qui épinglait l'axe x sur l'ancienne plage)
+      let programmaticView = false;
+
       // Zoom/pan sur un panneau → même fenêtre sur l'autre + ré-agrégation
       function syncWindow(source) {
+        if (programmaticView) return;
         const { min, max } = source.scales.x;
+        programmaticView = true;
         charts.forEach((c) => {
           if (c !== source) c.zoomScale("x", { min, max }, "none");
         });
+        programmaticView = false;
         isZoomed = true;
         resetZoomBtn.hidden = false;
         if (aggregateEnabled) applySeries(computeBuckets(rawPoints, min, max));
       }
 
-      resetZoomBtn.addEventListener("click", () => {
+      // Rend la main aux échelles automatiques (sans passer pour un zoom utilisateur)
+      function resetView() {
+        programmaticView = true;
         charts.forEach((c) => c.resetZoom("none"));
+        programmaticView = false;
+      }
+
+      resetZoomBtn.addEventListener("click", () => {
+        resetView();
         isZoomed = false;
         resetZoomBtn.hidden = true;
         applySeries(currentSeries(fullRange.min, fullRange.max));
@@ -782,7 +797,7 @@
             : { min: 0, max: 0 };
           aggregateEnabled = !NO_AGGREGATE_RANGES.has(range);
 
-          charts.forEach((c) => c.resetZoom("none"));
+          resetView();
           isZoomed = false;
           resetZoomBtn.hidden = true;
           applySeries(currentSeries(fullRange.min, fullRange.max));
