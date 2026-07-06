@@ -13,7 +13,7 @@ Measure.init(
             type: DataTypes.FLOAT,
         },
         timestamp: {
-            type: DataTypes.BIGINT.UNSIGNED,
+            type: DataTypes.BIGINT,
             allowNull: false,
         },
         receivedAt: {
