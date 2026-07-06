@@ -429,10 +429,57 @@
       const dbChartCanvas = document.getElementById("db-chart");
       const dbHistoryStatus = document.getElementById("db-history-status");
       const rangeButtons = document.querySelectorAll(".range-btn[data-range]");
+      const BUCKET_COUNT = 100; // 1% de la plage affichée par tranche
       let dbChart = null;
+      let dbRawPoints = []; // { x: Date, temp, hum } — toutes les mesures chargées
+      let dbFullRange = { min: 0, max: 0 };
+
+      // Regroupe les points en BUCKET_COUNT tranches sur [xMin, xMax] et moyenne temp/hum par tranche
+      function computeBuckets(points, xMin, xMax) {
+        const span = xMax - xMin;
+        if (!points.length || span <= 0) return { tempData: [], humData: [] };
+        const bucketMs = span / BUCKET_COUNT;
+        const buckets = Array.from({ length: BUCKET_COUNT }, () => ({ tempSum: 0, tempN: 0, humSum: 0, humN: 0 }));
+
+        points.forEach((p) => {
+          const t = p.x.getTime();
+          if (t < xMin || t > xMax) return;
+          let idx = Math.floor((t - xMin) / bucketMs);
+          if (idx >= BUCKET_COUNT) idx = BUCKET_COUNT - 1;
+          if (idx < 0) idx = 0;
+          const b = buckets[idx];
+          b.tempSum += p.temp;
+          b.tempN++;
+          b.humSum += p.hum;
+          b.humN++;
+        });
+
+        const tempData = [];
+        const humData = [];
+        buckets.forEach((b, i) => {
+          const x = new Date(xMin + (i + 0.5) * bucketMs);
+          if (b.tempN) tempData.push({ x, y: b.tempSum / b.tempN });
+          if (b.humN) humData.push({ x, y: b.humSum / b.humN });
+        });
+        return { tempData, humData };
+      }
+
+      // Recalcule les moyennes par tranche pour la plage x actuellement visible (zoom/pan)
+      function refreshAggregation(chart) {
+        const xScale = chart.scales.x;
+        const { tempData, humData } = computeBuckets(dbRawPoints, xScale.min, xScale.max);
+        chart.data.datasets[0].data = tempData;
+        chart.data.datasets[1].data = humData;
+        chart.update("none");
+      }
 
       function renderDbChart(rows) {
-        const points = rows.map((r) => ({ x: new Date(r.receivedAt), temp: r.temperature, hum: r.humidity }));
+        dbRawPoints = rows.map((r) => ({ x: new Date(r.receivedAt), temp: r.temperature, hum: r.humidity }));
+        dbFullRange = dbRawPoints.length
+          ? { min: dbRawPoints[0].x.getTime(), max: dbRawPoints[dbRawPoints.length - 1].x.getTime() }
+          : { min: 0, max: 0 };
+
+        const { tempData, humData } = computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max);
 
         if (dbChart) {
           dbChart.destroy();
@@ -443,8 +490,8 @@
           data: {
             datasets: [
               {
-                label: "Température (°C)",
-                data: points.map((p) => ({ x: p.x, y: p.temp })),
+                label: "Température moyenne (°C)",
+                data: tempData,
                 borderColor: "#f97316",
                 backgroundColor: "#f9731633",
                 yAxisID: "yTemp",
@@ -453,8 +500,8 @@
                 tension: 0.25,
               },
               {
-                label: "Humidité (%)",
-                data: points.map((p) => ({ x: p.x, y: p.hum })),
+                label: "Humidité moyenne (%)",
+                data: humData,
                 borderColor: "#38bdf8",
                 backgroundColor: "#38bdf833",
                 yAxisID: "yHum",
@@ -494,11 +541,16 @@
             plugins: {
               legend: { labels: { color: "#e2e8f0" } },
               zoom: {
-                pan: { enabled: true, mode: "x" },
+                pan: {
+                  enabled: true,
+                  mode: "x",
+                  onPanComplete: ({ chart }) => refreshAggregation(chart),
+                },
                 zoom: {
                   wheel: { enabled: true },
                   pinch: { enabled: true },
                   mode: "x",
+                  onZoomComplete: ({ chart }) => refreshAggregation(chart),
                 },
               },
             },
@@ -514,7 +566,7 @@
           const rows = await res.json();
           renderDbChart(rows);
           dbHistoryStatus.textContent = rows.length
-            ? `${rows.length} mesure(s) affichée(s) — molette pour zoomer, glisser pour déplacer`
+            ? `${rows.length} mesure(s) — moyenne par tranche de 1% de la période affichée. Molette pour zoomer, glisser pour déplacer`
             : "Aucune donnée sur cette période";
         } catch (err) {
           console.error(err);
@@ -531,7 +583,12 @@
       });
 
       document.getElementById("reset-zoom-btn").addEventListener("click", () => {
-        if (dbChart) dbChart.resetZoom();
+        if (!dbChart) return;
+        dbChart.resetZoom();
+        const { tempData, humData } = computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max);
+        dbChart.data.datasets[0].data = tempData;
+        dbChart.data.datasets[1].data = humData;
+        dbChart.update("none");
       });
 
       loadHistory("24h");
