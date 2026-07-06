@@ -10,6 +10,7 @@ const PORT = 3000;
 // horodatage fiable côté serveur — le champ `timestamp` envoyé par l'ESP32
 // est juste millis() depuis son démarrage, pas une date réelle)
 const HISTORY_RANGES_MS = {
+  '5m': 5 * 60 * 1000,
   '1h': 60 * 60 * 1000,
   '6h': 6 * 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,

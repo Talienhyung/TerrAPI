@@ -295,6 +295,7 @@
       <div class="db-history-header">
         <h2>Historique enregistré (base de données)</h2>
         <div class="range-buttons">
+          <button class="range-btn" data-range="5m">5min</button>
           <button class="range-btn" data-range="1h">1h</button>
           <button class="range-btn" data-range="6h">6h</button>
           <button class="range-btn active" data-range="24h">24h</button>
@@ -430,9 +431,11 @@
       const dbHistoryStatus = document.getElementById("db-history-status");
       const rangeButtons = document.querySelectorAll(".range-btn[data-range]");
       const BUCKET_COUNT = 100; // 1% de la plage affichée par tranche
+      const NO_AGGREGATE_RANGES = new Set(["5m"]); // plages assez courtes pour afficher les valeurs brutes
       let dbChart = null;
       let dbRawPoints = []; // { x: Date, temp, hum } — toutes les mesures chargées
       let dbFullRange = { min: 0, max: 0 };
+      let dbAggregateEnabled = true;
 
       // Regroupe les points en BUCKET_COUNT tranches sur [xMin, xMax] et moyenne temp/hum par tranche
       function computeBuckets(points, xMin, xMax) {
@@ -464,8 +467,17 @@
         return { tempData, humData };
       }
 
+      function rawSeries(points) {
+        return {
+          tempData: points.map((p) => ({ x: p.x, y: p.temp })),
+          humData: points.map((p) => ({ x: p.x, y: p.hum })),
+        };
+      }
+
       // Recalcule les moyennes par tranche pour la plage x actuellement visible (zoom/pan)
+      // Ne fait rien si l'agrégation est désactivée pour la plage en cours (ex : 5min, données déjà brutes)
       function refreshAggregation(chart) {
+        if (!dbAggregateEnabled) return;
         const xScale = chart.scales.x;
         const { tempData, humData } = computeBuckets(dbRawPoints, xScale.min, xScale.max);
         chart.data.datasets[0].data = tempData;
@@ -473,13 +485,16 @@
         chart.update("none");
       }
 
-      function renderDbChart(rows) {
+      function renderDbChart(rows, range) {
         dbRawPoints = rows.map((r) => ({ x: new Date(r.receivedAt), temp: r.temperature, hum: r.humidity }));
         dbFullRange = dbRawPoints.length
           ? { min: dbRawPoints[0].x.getTime(), max: dbRawPoints[dbRawPoints.length - 1].x.getTime() }
           : { min: 0, max: 0 };
+        dbAggregateEnabled = !NO_AGGREGATE_RANGES.has(range);
 
-        const { tempData, humData } = computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max);
+        const { tempData, humData } = dbAggregateEnabled
+          ? computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max)
+          : rawSeries(dbRawPoints);
 
         if (dbChart) {
           dbChart.destroy();
@@ -490,7 +505,7 @@
           data: {
             datasets: [
               {
-                label: "Température moyenne (°C)",
+                label: dbAggregateEnabled ? "Température moyenne (°C)" : "Température (°C)",
                 data: tempData,
                 borderColor: "#f97316",
                 backgroundColor: "#f9731633",
@@ -500,7 +515,7 @@
                 tension: 0.25,
               },
               {
-                label: "Humidité moyenne (%)",
+                label: dbAggregateEnabled ? "Humidité moyenne (%)" : "Humidité (%)",
                 data: humData,
                 borderColor: "#38bdf8",
                 backgroundColor: "#38bdf833",
@@ -564,9 +579,13 @@
           const res = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const rows = await res.json();
-          renderDbChart(rows);
+          renderDbChart(rows, range);
           dbHistoryStatus.textContent = rows.length
-            ? `${rows.length} mesure(s) — moyenne par tranche de 1% de la période affichée. Molette pour zoomer, glisser pour déplacer`
+            ? `${rows.length} mesure(s) — ${
+                dbAggregateEnabled
+                  ? "moyenne par tranche de 1% de la période affichée"
+                  : "valeurs brutes (pas d'agrégation)"
+              }. Molette pour zoomer, glisser pour déplacer`
             : "Aucune donnée sur cette période";
         } catch (err) {
           console.error(err);
@@ -585,6 +604,7 @@
       document.getElementById("reset-zoom-btn").addEventListener("click", () => {
         if (!dbChart) return;
         dbChart.resetZoom();
+        if (!dbAggregateEnabled) return;
         const { tempData, humData } = computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max);
         dbChart.data.datasets[0].data = tempData;
         dbChart.data.datasets[1].data = humData;
