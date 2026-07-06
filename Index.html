@@ -3,8 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DHT11 – Données temps réel</title>
+    <title>TerrAPI – Suivi DHT11</title>
     <style>
+      :root {
+        /* Chrome sombre */
+        --page: #0d0d0d;
+        --surface: #1a1a19;
+        --surface-raised: #222220;
+        --border: rgba(255, 255, 255, 0.1);
+        --ink: #ffffff;
+        --ink-2: #c3c2b7;
+        --muted: #898781;
+        --grid: #2c2c2a;
+        --baseline: #383835;
+        /* Séries (validées CVD + contraste sur fond sombre) */
+        --temp: #d95926;
+        --hum: #3987e5;
+        /* Statut */
+        --good: #0ca30c;
+        --critical: #d03b3b;
+      }
+
       * {
         box-sizing: border-box;
         margin: 0;
@@ -12,515 +31,603 @@
       }
 
       body {
-        font-family: system-ui, sans-serif;
-        background: #0f172a;
-        color: #e2e8f0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--page);
+        color: var(--ink);
         min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 40px 20px;
+        padding: 32px 20px 48px;
       }
 
-      h1 {
-        font-size: 1.6rem;
-        font-weight: 600;
-        margin-bottom: 6px;
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      /* ── En-tête ── */
+      .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .page-header h1 {
+        font-size: 1.4rem;
+        font-weight: 650;
         letter-spacing: -0.02em;
       }
 
-      .subtitle {
-        color: #64748b;
-        font-size: 0.9rem;
-        margin-bottom: 40px;
-      }
-
-      .cards {
-        display: flex;
-        gap: 24px;
-        flex-wrap: wrap;
-        justify-content: center;
-        margin-bottom: 40px;
-      }
-
-      .card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 16px;
-        padding: 32px 40px;
-        text-align: center;
-        min-width: 200px;
-        transition: transform 0.2s;
-      }
-
-      .card:hover {
-        transform: translateY(-2px);
-      }
-
-      .card-icon {
-        font-size: 2.5rem;
-        margin-bottom: 12px;
-        display: block;
-      }
-
-      .card-label {
-        font-size: 0.8rem;
-        color: #64748b;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 8px;
-      }
-
-      .card-value {
-        font-size: 3rem;
-        font-weight: 700;
-        line-height: 1;
-        transition: color 0.4s;
-      }
-
-      .card-unit {
-        font-size: 1.2rem;
-        font-weight: 400;
-        opacity: 0.6;
-      }
-
-      #temp-value {
-        color: #f97316;
-      }
-      #hum-value {
-        color: #38bdf8;
-      }
-
-      /* Barre de progression */
-      .progress-bar {
-        width: 100%;
-        height: 6px;
-        background: #334155;
-        border-radius: 3px;
-        margin-top: 16px;
-        overflow: hidden;
-      }
-
-      .progress-fill {
-        height: 100%;
-        border-radius: 3px;
-        transition: width 0.6s ease;
-      }
-
-      #temp-bar {
-        background: #f97316;
-      }
-      #hum-bar {
-        background: #38bdf8;
-      }
-
-      /* Historique graphique simple */
-      .history-section {
-        width: 100%;
-        max-width: 700px;
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 24px;
-      }
-
-      .history-section h2 {
+      .page-header .subtitle {
+        color: var(--muted);
         font-size: 0.85rem;
-        color: #64748b;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 16px;
+        margin-top: 4px;
       }
 
-      canvas {
-        width: 100%;
-        height: 140px;
-        display: block;
+      .conn {
+        text-align: right;
       }
 
-      /* Historique complet (base de données) */
-      .db-history-section {
-        width: 100%;
-        max-width: 900px;
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 24px;
-      }
-
-      .db-history-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-
-      .db-history-header h2 {
-        font-size: 0.85rem;
-        color: #64748b;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-
-      .range-buttons {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .range-btn {
-        background: #0f172a;
-        border: 1px solid #334155;
-        color: #94a3b8;
-        font-size: 0.8rem;
-        padding: 6px 12px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.2s, color 0.2s;
-      }
-
-      .range-btn:hover {
-        background: #334155;
-        color: #e2e8f0;
-      }
-
-      .range-btn.active {
-        background: #38bdf8;
-        border-color: #38bdf8;
-        color: #0f172a;
-        font-weight: 600;
-      }
-
-      .db-chart-wrap {
-        position: relative;
-        width: 100%;
-        height: 320px;
-      }
-
-      .db-history-status {
-        font-size: 0.8rem;
-        color: #475569;
-        margin-top: 12px;
-      }
-
-      /* Statut connexion */
-      .status-bar {
-        display: flex;
+      .status-pill {
+        display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-size: 0.85rem;
-        color: #64748b;
+        font-size: 0.8rem;
+        color: var(--ink-2);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 12px;
       }
 
       .dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #64748b;
+        background: var(--muted);
         transition: background 0.4s;
+        flex: none;
       }
-
       .dot.connected {
-        background: #22c55e;
-        box-shadow: 0 0 6px #22c55e88;
+        background: var(--good);
+        box-shadow: 0 0 6px rgba(12, 163, 12, 0.5);
       }
       .dot.disconnected {
-        background: #ef4444;
+        background: var(--critical);
       }
 
       .last-update {
-        font-size: 0.8rem;
-        color: #475569;
-        margin-top: 8px;
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 6px;
+        min-height: 1em;
       }
 
-      /* Animation flash lors d'une mise à jour */
-      @keyframes flash {
-        0% {
-          background: #1e3a5f;
-        }
-        100% {
-          background: #1e293b;
-        }
+      /* ── Tuiles temps réel ── */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
       }
-      .card.updated {
-        animation: flash 0.5s ease;
+
+      .tile {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 20px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .tile-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      /* Clé de série : le trait coloré porte l'identité, jamais le texte */
+      .key {
+        width: 14px;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--c);
+        flex: none;
+      }
+
+      .tile-value {
+        font-size: 2.6rem;
+        font-weight: 600;
+        line-height: 1.1;
+        color: var(--ink);
+      }
+
+      .tile-unit {
+        font-size: 1.1rem;
+        font-weight: 400;
+        color: var(--ink-2);
+        margin-left: 4px;
+      }
+
+      .tile-range {
+        font-size: 0.75rem;
+        color: var(--muted);
+        min-height: 1em;
+      }
+
+      .spark {
+        width: 100%;
+        height: 44px;
+        display: block;
+        margin-top: 6px;
+      }
+
+      /* ── Historique ── */
+      .history {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .filter-row .spacer {
+        flex: 1;
+      }
+
+      .range-btn {
+        background: transparent;
+        border: 1px solid var(--baseline);
+        color: var(--ink-2);
+        font: inherit;
+        font-size: 0.8rem;
+        padding: 5px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+
+      .range-btn:hover {
+        background: var(--surface-raised);
+        color: var(--ink);
+      }
+
+      .range-btn.active {
+        background: var(--surface-raised);
+        border-color: var(--ink-2);
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .panels {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: opacity 0.2s;
+      }
+
+      /* Rechargement : on garde le rendu précédent atténué, pas de squelette */
+      .panels.is-loading {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 18px 12px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .panel-header h2 {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--ink-2);
+      }
+
+      .panel-header .unit {
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      /* Hauteur = tracé + bande de l'axe x, pour ne jamais rogner les libellés */
+      .chart-wrap {
+        position: relative;
+        width: 100%;
+        height: 190px;
+      }
+      .chart-wrap.with-x-axis {
+        height: 220px;
+      }
+
+      .history-status {
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+
+      /* ── Vue tableau (équivalent accessible des graphiques) ── */
+      details.table-view summary {
+        font-size: 0.8rem;
+        color: var(--muted);
+        cursor: pointer;
+        user-select: none;
+      }
+      details.table-view summary:hover {
+        color: var(--ink);
+      }
+
+      .table-scroll {
+        margin-top: 10px;
+        max-height: 320px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+
+      th,
+      td {
+        text-align: right;
+        padding: 6px 14px;
+        border-bottom: 1px solid var(--grid);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+
+      thead th {
+        position: sticky;
+        top: 0;
+        background: var(--surface-raised);
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
       }
     </style>
   </head>
   <body>
-    <h1>🌡 DHT11 — Dashboard</h1>
-    <p class="subtitle">Données ESP32 en temps réel</p>
-
-    <div class="cards">
-      <!-- Température -->
-      <div class="card" id="card-temp">
-        <span class="card-icon">🌡</span>
-        <div class="card-label">Température</div>
-        <div class="card-value">
-          <span id="temp-value">--</span>
-          <span class="card-unit">°C</span>
+    <div class="wrap">
+      <!-- En-tête : titre + état de connexion -->
+      <header class="page-header">
+        <div>
+          <h1>TerrAPI</h1>
+          <p class="subtitle">Capteur DHT11 · ESP32 — temps réel</p>
         </div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="temp-bar" style="width: 0%"></div>
+        <div class="conn">
+          <div class="status-pill">
+            <span class="dot" id="dot"></span>
+            <span id="status-text">Connexion au serveur…</span>
+          </div>
+          <p class="last-update" id="last-update"></p>
         </div>
-      </div>
+      </header>
 
-      <!-- Humidité -->
-      <div class="card" id="card-hum">
-        <span class="card-icon">💧</span>
-        <div class="card-label">Humidité</div>
-        <div class="card-value">
-          <span id="hum-value">--</span>
-          <span class="card-unit">%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="hum-bar" style="width: 0%"></div>
-        </div>
-      </div>
-    </div>
+      <!-- Tuiles temps réel -->
+      <section class="tiles">
+        <article class="tile">
+          <p class="tile-label"><span class="key" style="--c: var(--temp)"></span>Température</p>
+          <p class="tile-value"><span id="temp-value">--</span><span class="tile-unit">°C</span></p>
+          <p class="tile-range" id="temp-range"></p>
+          <canvas class="spark" id="temp-spark"></canvas>
+        </article>
+        <article class="tile">
+          <p class="tile-label"><span class="key" style="--c: var(--hum)"></span>Humidité</p>
+          <p class="tile-value"><span id="hum-value">--</span><span class="tile-unit">%</span></p>
+          <p class="tile-range" id="hum-range"></p>
+          <canvas class="spark" id="hum-spark"></canvas>
+        </article>
+      </section>
 
-    <!-- Graphique historique -->
-    <div class="history-section">
-      <h2>Historique (50 dernières mesures)</h2>
-      <canvas id="chart"></canvas>
-    </div>
-
-    <!-- Historique complet (base de données) -->
-    <div class="db-history-section">
-      <div class="db-history-header">
-        <h2>Historique enregistré (base de données)</h2>
-        <div class="range-buttons">
-          <button class="range-btn" data-range="5m">5min</button>
-          <button class="range-btn" data-range="1h">1h</button>
-          <button class="range-btn" data-range="6h">6h</button>
-          <button class="range-btn active" data-range="24h">24h</button>
-          <button class="range-btn" data-range="7d">7j</button>
-          <button class="range-btn" data-range="30d">30j</button>
+      <!-- Historique : une rangée de filtres au-dessus des deux panneaux qu'elle pilote -->
+      <section class="history">
+        <div class="filter-row" role="group" aria-label="Période affichée">
+          <button class="range-btn" data-range="5m">5 min</button>
+          <button class="range-btn" data-range="1h">1 h</button>
+          <button class="range-btn" data-range="6h">6 h</button>
+          <button class="range-btn active" data-range="24h">24 h</button>
+          <button class="range-btn" data-range="7d">7 j</button>
+          <button class="range-btn" data-range="30d">30 j</button>
           <button class="range-btn" data-range="all">Tout</button>
-          <button class="range-btn" id="reset-zoom-btn">Réinitialiser le zoom</button>
+          <span class="spacer"></span>
+          <button class="range-btn" id="reset-zoom-btn" hidden>Réinitialiser le zoom</button>
         </div>
-      </div>
-      <div class="db-chart-wrap">
-        <canvas id="db-chart"></canvas>
-      </div>
-      <div class="db-history-status" id="db-history-status">Chargement…</div>
-    </div>
 
-    <!-- Statut -->
-    <div class="status-bar">
-      <div class="dot" id="dot"></div>
-      <span id="status-text">Connexion au serveur…</span>
+        <div class="panels" id="panels">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Température</h2>
+              <span class="unit">°C</span>
+            </div>
+            <div class="chart-wrap"><canvas id="temp-chart"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Humidité</h2>
+              <span class="unit">%</span>
+            </div>
+            <div class="chart-wrap with-x-axis"><canvas id="hum-chart"></canvas></div>
+          </div>
+        </div>
+
+        <p class="history-status" id="history-status">Chargement…</p>
+
+        <details class="table-view">
+          <summary>Voir les données en tableau</summary>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Horodatage</th>
+                  <th scope="col">Température (°C)</th>
+                  <th scope="col">Humidité (%)</th>
+                </tr>
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
     </div>
-    <div class="last-update" id="last-update"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script>
+      const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const COLORS = {
+        temp: css("--temp"),
+        hum: css("--hum"),
+        surface: css("--surface"),
+        ink: css("--ink"),
+        ink2: css("--ink-2"),
+        muted: css("--muted"),
+        grid: css("--grid"),
+        raised: css("--surface-raised"),
+        border: "rgba(255,255,255,0.1)",
+      };
+
+      const fmt1 = (v) =>
+        v.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+      // ══════════════ Tuiles temps réel + sparklines ══════════════
       const MAX_POINTS = 50;
-      const history = { temp: [], hum: [], labels: [] };
+      const live = { temp: [], hum: [] };
 
       const tempEl = document.getElementById("temp-value");
       const humEl = document.getElementById("hum-value");
-      const tempBar = document.getElementById("temp-bar");
-      const humBar = document.getElementById("hum-bar");
+      const tempRangeEl = document.getElementById("temp-range");
+      const humRangeEl = document.getElementById("hum-range");
       const dot = document.getElementById("dot");
       const statusTx = document.getElementById("status-text");
       const lastUpd = document.getElementById("last-update");
-      const cardTemp = document.getElementById("card-temp");
-      const cardHum = document.getElementById("card-hum");
+      const tempSpark = document.getElementById("temp-spark");
+      const humSpark = document.getElementById("hum-spark");
 
-      // ── Mini graphique canvas ──
-      const canvas = document.getElementById("chart");
-      const ctx = canvas.getContext("2d");
+      // Une série par sparkline, échelle propre à chaque mesure
+      function drawSpark(canvas, data, color) {
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, w, h);
+        if (data.length < 2) return;
 
-      function resizeCanvas() {
-        canvas.width = canvas.offsetWidth;
-        canvas.height = 140;
-      }
-      resizeCanvas();
-      window.addEventListener("resize", () => {
-        resizeCanvas();
-        drawChart();
-      });
-
-      function drawChart() {
-        const W = canvas.width,
-          H = canvas.height;
-        ctx.clearRect(0, 0, W, H);
-
-        function drawLine(data, color, minVal, maxVal) {
-          if (data.length < 2) return;
-          ctx.beginPath();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          ctx.lineJoin = "round";
-          data.forEach((v, i) => {
-            const x = (i / (MAX_POINTS - 1)) * W;
-            const y = H - ((v - minVal) / (maxVal - minVal)) * (H - 20) - 10;
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-          });
-          ctx.stroke();
-
-          // Remplissage dégradé léger
-          ctx.lineTo(W, H);
-          ctx.lineTo(0, H);
-          ctx.closePath();
-          const grad = ctx.createLinearGradient(0, 0, 0, H);
-          grad.addColorStop(0, color + "40");
-          grad.addColorStop(1, color + "00");
-          ctx.fillStyle = grad;
-          ctx.fill();
+        let min = Math.min(...data);
+        let max = Math.max(...data);
+        if (max - min < 1) {
+          const mid = (min + max) / 2;
+          min = mid - 0.5;
+          max = mid + 0.5;
         }
 
-        // Grille horizontale
-        ctx.strokeStyle = "#334155";
-        ctx.lineWidth = 0.5;
-        [0.25, 0.5, 0.75].forEach((r) => {
-          ctx.beginPath();
-          ctx.moveTo(0, H * r);
-          ctx.lineTo(W, H * r);
-          ctx.stroke();
-        });
+        const padY = 6;
+        const padX = 5;
+        const x = (i) => padX + (i / (MAX_POINTS - 1)) * (w - 2 * padX);
+        const y = (v) => h - padY - ((v - min) / (max - min)) * (h - 2 * padY);
 
-        drawLine(history.temp, "#f97316", 0, 60);
-        drawLine(history.hum, "#38bdf8", 0, 100);
+        // Trait 2px + lavis à ~10 % d'opacité
+        ctx.beginPath();
+        data.forEach((v, i) => (i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v))));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        ctx.lineTo(x(data.length - 1), h);
+        ctx.lineTo(x(0), h);
+        ctx.closePath();
+        ctx.fillStyle = color + "1a";
+        ctx.fill();
+
+        // Point terminal avec anneau couleur surface
+        const ex = x(data.length - 1);
+        const ey = y(data[data.length - 1]);
+        ctx.beginPath();
+        ctx.arc(ex, ey, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = COLORS.surface;
+        ctx.stroke();
       }
 
-      // ── Mise à jour de l'UI ──
-      function updateUI(data) {
-        const temp = data.temperature;
-        const hum = data.humidity;
+      function drawSparks() {
+        drawSpark(tempSpark, live.temp, COLORS.temp);
+        drawSpark(humSpark, live.hum, COLORS.hum);
+      }
+      window.addEventListener("resize", drawSparks);
 
-        tempEl.textContent = temp.toFixed(1);
-        humEl.textContent = hum.toFixed(1);
+      function updateTiles(data) {
+        const { temperature: temp, humidity: hum } = data;
+        tempEl.textContent = fmt1(temp);
+        humEl.textContent = fmt1(hum);
 
-        tempBar.style.width = Math.min((temp / 60) * 100, 100) + "%";
-        humBar.style.width = Math.min(hum, 100) + "%";
-
-        // Historique
-        const now = new Date(data.receivedAt || Date.now());
-        const label = now.toLocaleTimeString("fr-FR");
-        history.temp.push(temp);
-        history.hum.push(hum);
-        history.labels.push(label);
-        if (history.temp.length > MAX_POINTS) {
-          history.temp.shift();
-          history.hum.shift();
-          history.labels.shift();
+        live.temp.push(temp);
+        live.hum.push(hum);
+        if (live.temp.length > MAX_POINTS) {
+          live.temp.shift();
+          live.hum.shift();
         }
-        drawChart();
+        drawSparks();
 
-        // Flash animation
-        [cardTemp, cardHum].forEach((c) => {
-          c.classList.remove("updated");
-          void c.offsetWidth; // reflow pour relancer l'animation
-          c.classList.add("updated");
-        });
+        tempRangeEl.textContent = `min ${fmt1(Math.min(...live.temp))} · max ${fmt1(Math.max(...live.temp))}`;
+        humRangeEl.textContent = `min ${fmt1(Math.min(...live.hum))} · max ${fmt1(Math.max(...live.hum))}`;
 
-        lastUpd.textContent = `Dernière mise à jour : ${label}`;
+        const when = new Date(data.receivedAt || Date.now());
+        lastUpd.textContent = `Dernière mesure : ${when.toLocaleTimeString("fr-FR")}`;
       }
 
-      // ── Historique complet depuis la DB (graph interactif Chart.js) ──
-      const dbChartCanvas = document.getElementById("db-chart");
-      const dbHistoryStatus = document.getElementById("db-history-status");
+      // ══════════════ Historique (deux panneaux synchronisés) ══════════════
+      const BUCKET_COUNT = 100; // 1 % de la plage affichée par tranche
+      const NO_AGGREGATE_RANGES = new Set(["5m"]); // plages courtes : valeurs brutes
+      const TABLE_MAX_ROWS = 500;
+
+      const panels = document.getElementById("panels");
+      const historyStatus = document.getElementById("history-status");
+      const tableBody = document.getElementById("table-body");
+      const resetZoomBtn = document.getElementById("reset-zoom-btn");
       const rangeButtons = document.querySelectorAll(".range-btn[data-range]");
-      const BUCKET_COUNT = 100; // 1% de la plage affichée par tranche
-      const NO_AGGREGATE_RANGES = new Set(["5m"]); // plages assez courtes pour afficher les valeurs brutes
-      let dbChart = null;
-      let dbRawPoints = []; // { x: Date, temp, hum } — toutes les mesures chargées
-      let dbFullRange = { min: 0, max: 0 };
-      let dbAggregateEnabled = true;
 
-      // Regroupe les points en BUCKET_COUNT tranches sur [xMin, xMax] et moyenne temp/hum par tranche
+      let rawPoints = []; // { x: Date, temp, hum }
+      let fullRange = { min: 0, max: 0 };
+      let aggregateEnabled = true;
+
+      // Regroupe les points en BUCKET_COUNT tranches sur [xMin, xMax], moyenne par tranche
       function computeBuckets(points, xMin, xMax) {
         const span = xMax - xMin;
-        if (!points.length || span <= 0) return { tempData: [], humData: [] };
+        if (!points.length || span <= 0) return { tempData: [], humData: [], rows: [] };
         const bucketMs = span / BUCKET_COUNT;
-        const buckets = Array.from({ length: BUCKET_COUNT }, () => ({ tempSum: 0, tempN: 0, humSum: 0, humN: 0 }));
+        const buckets = Array.from({ length: BUCKET_COUNT }, () => ({
+          tempSum: 0,
+          humSum: 0,
+          n: 0,
+        }));
 
         points.forEach((p) => {
           const t = p.x.getTime();
           if (t < xMin || t > xMax) return;
-          let idx = Math.floor((t - xMin) / bucketMs);
-          if (idx >= BUCKET_COUNT) idx = BUCKET_COUNT - 1;
-          if (idx < 0) idx = 0;
+          const idx = Math.min(BUCKET_COUNT - 1, Math.max(0, Math.floor((t - xMin) / bucketMs)));
           const b = buckets[idx];
           b.tempSum += p.temp;
-          b.tempN++;
           b.humSum += p.hum;
-          b.humN++;
+          b.n++;
         });
 
         const tempData = [];
         const humData = [];
+        const rows = [];
         buckets.forEach((b, i) => {
+          if (!b.n) return;
           const x = new Date(xMin + (i + 0.5) * bucketMs);
-          if (b.tempN) tempData.push({ x, y: b.tempSum / b.tempN });
-          if (b.humN) humData.push({ x, y: b.humSum / b.humN });
+          const temp = b.tempSum / b.n;
+          const hum = b.humSum / b.n;
+          tempData.push({ x, y: temp });
+          humData.push({ x, y: hum });
+          rows.push({ x, temp, hum });
         });
-        return { tempData, humData };
+        return { tempData, humData, rows };
       }
 
-      function rawSeries(points) {
+      function currentSeries(xMin, xMax) {
+        if (aggregateEnabled) return computeBuckets(rawPoints, xMin, xMax);
         return {
-          tempData: points.map((p) => ({ x: p.x, y: p.temp })),
-          humData: points.map((p) => ({ x: p.x, y: p.hum })),
+          tempData: rawPoints.map((p) => ({ x: p.x, y: p.temp })),
+          humData: rawPoints.map((p) => ({ x: p.x, y: p.hum })),
+          rows: rawPoints,
         };
       }
 
-      // Recalcule les moyennes par tranche pour la plage x actuellement visible (zoom/pan)
-      // Ne fait rien si l'agrégation est désactivée pour la plage en cours (ex : 5min, données déjà brutes)
-      function refreshAggregation(chart) {
-        if (!dbAggregateEnabled) return;
-        const xScale = chart.scales.x;
-        const { tempData, humData } = computeBuckets(dbRawPoints, xScale.min, xScale.max);
-        chart.data.datasets[0].data = tempData;
-        chart.data.datasets[1].data = humData;
-        chart.update("none");
+      // Vue tableau : le pendant accessible des graphiques (textContent uniquement)
+      function renderTable(rows) {
+        tableBody.replaceChildren();
+        const slice = rows.slice(-TABLE_MAX_ROWS);
+        slice.forEach((r) => {
+          const tr = document.createElement("tr");
+          const cells = [
+            r.x.toLocaleString("fr-FR"),
+            fmt1(r.temp),
+            fmt1(r.hum),
+          ];
+          cells.forEach((text) => {
+            const td = document.createElement("td");
+            td.textContent = text;
+            tr.appendChild(td);
+          });
+          tableBody.appendChild(tr);
+        });
       }
 
-      function renderDbChart(rows, range) {
-        dbRawPoints = rows.map((r) => ({ x: new Date(r.receivedAt), temp: r.temperature, hum: r.humidity }));
-        dbFullRange = dbRawPoints.length
-          ? { min: dbRawPoints[0].x.getTime(), max: dbRawPoints[dbRawPoints.length - 1].x.getTime() }
-          : { min: 0, max: 0 };
-        dbAggregateEnabled = !NO_AGGREGATE_RANGES.has(range);
+      // Trait vertical qui suit l'infobulle : le lecteur vise une date, pas une ligne de 2px
+      const crosshair = {
+        id: "crosshair",
+        afterDraw(chart) {
+          const actives = chart.tooltip?.getActiveElements();
+          if (!actives || !actives.length) return;
+          const x = actives[0].element.x;
+          const { top, bottom } = chart.chartArea;
+          const ctx = chart.ctx;
+          ctx.save();
+          ctx.strokeStyle = COLORS.muted;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+          ctx.restore();
+        },
+      };
 
-        const { tempData, humData } = dbAggregateEnabled
-          ? computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max)
-          : rawSeries(dbRawPoints);
-
-        if (dbChart) {
-          dbChart.destroy();
-        }
-
-        dbChart = new Chart(dbChartCanvas.getContext("2d"), {
+      function makeChart(canvasId, color, unit, showXTicks) {
+        return new Chart(document.getElementById(canvasId).getContext("2d"), {
           type: "line",
+          plugins: [crosshair],
           data: {
             datasets: [
               {
-                label: dbAggregateEnabled ? "Température moyenne (°C)" : "Température (°C)",
-                data: tempData,
-                borderColor: "#f97316",
-                backgroundColor: "#f9731633",
-                yAxisID: "yTemp",
+                data: [],
+                borderColor: color,
+                backgroundColor: color + "1a",
+                fill: true,
                 pointRadius: 0,
-                borderWidth: 2,
-                tension: 0.25,
-              },
-              {
-                label: dbAggregateEnabled ? "Humidité moyenne (%)" : "Humidité (%)",
-                data: humData,
-                borderColor: "#38bdf8",
-                backgroundColor: "#38bdf833",
-                yAxisID: "yHum",
-                pointRadius: 0,
+                pointHoverRadius: 5,
+                pointHoverBackgroundColor: color,
+                pointHoverBorderColor: COLORS.surface,
+                pointHoverBorderWidth: 2,
                 borderWidth: 2,
                 tension: 0.25,
               },
@@ -534,38 +641,60 @@
             scales: {
               x: {
                 type: "time",
-                time: { tooltipFormat: "dd/MM/yyyy HH:mm:ss" },
-                ticks: { color: "#64748b" },
-                grid: { color: "#334155" },
-              },
-              yTemp: {
-                position: "left",
-                grace: "20%",
-                ticks: { color: "#f97316" },
-                grid: { color: "#334155" },
-                title: { display: true, text: "°C", color: "#f97316" },
-              },
-              yHum: {
-                position: "right",
-                grace: "20%",
-                ticks: { color: "#38bdf8" },
+                time: {
+                  tooltipFormat: "dd/MM/yyyy HH:mm:ss",
+                  displayFormats: {
+                    second: "HH:mm:ss",
+                    minute: "HH:mm",
+                    hour: "HH:mm",
+                    day: "dd/MM",
+                    week: "dd/MM",
+                    month: "MM/yyyy",
+                  },
+                },
+                ticks: { display: showXTicks, color: COLORS.muted, maxRotation: 0, autoSkipPadding: 16 },
                 grid: { display: false },
-                title: { display: true, text: "%", color: "#38bdf8" },
+                border: { color: COLORS.grid },
+              },
+              y: {
+                grace: "15%",
+                ticks: { color: COLORS.muted },
+                grid: { color: COLORS.grid, lineWidth: 1 },
+                border: { display: false },
+                // Largeur d'axe fixe pour que les deux tracés restent alignés verticalement
+                afterFit: (scale) => {
+                  scale.width = 48;
+                },
               },
             },
             plugins: {
-              legend: { labels: { color: "#e2e8f0" } },
+              legend: { display: false }, // une seule série : le titre du panneau la nomme
+              tooltip: {
+                backgroundColor: COLORS.raised,
+                borderColor: COLORS.border,
+                borderWidth: 1,
+                titleColor: COLORS.ink2,
+                titleFont: { weight: "normal" },
+                bodyColor: COLORS.ink,
+                bodyFont: { weight: "600", size: 14 },
+                padding: 10,
+                cornerRadius: 8,
+                displayColors: false,
+                callbacks: {
+                  label: (ctx) => `${fmt1(ctx.parsed.y)} ${unit}`,
+                },
+              },
               zoom: {
                 pan: {
                   enabled: true,
                   mode: "x",
-                  onPanComplete: ({ chart }) => refreshAggregation(chart),
+                  onPanComplete: ({ chart }) => syncWindow(chart),
                 },
                 zoom: {
                   wheel: { enabled: true },
                   pinch: { enabled: true },
                   mode: "x",
-                  onZoomComplete: ({ chart }) => refreshAggregation(chart),
+                  onZoomComplete: ({ chart }) => syncWindow(chart),
                 },
               },
             },
@@ -573,23 +702,67 @@
         });
       }
 
+      const tempChart = makeChart("temp-chart", COLORS.temp, "°C", false);
+      const humChart = makeChart("hum-chart", COLORS.hum, "%", true);
+      const charts = [tempChart, humChart];
+
+      function applySeries({ tempData, humData, rows }) {
+        tempChart.data.datasets[0].data = tempData;
+        humChart.data.datasets[0].data = humData;
+        tempChart.update("none");
+        humChart.update("none");
+        renderTable(rows);
+      }
+
+      // Zoom/pan sur un panneau → même fenêtre sur l'autre + ré-agrégation
+      function syncWindow(source) {
+        const { min, max } = source.scales.x;
+        charts.forEach((c) => {
+          if (c !== source) c.zoomScale("x", { min, max }, "none");
+        });
+        resetZoomBtn.hidden = false;
+        if (aggregateEnabled) applySeries(computeBuckets(rawPoints, min, max));
+      }
+
+      resetZoomBtn.addEventListener("click", () => {
+        charts.forEach((c) => c.resetZoom("none"));
+        resetZoomBtn.hidden = true;
+        applySeries(currentSeries(fullRange.min, fullRange.max));
+      });
+
       async function loadHistory(range) {
-        dbHistoryStatus.textContent = "Chargement…";
+        panels.classList.add("is-loading");
         try {
           const res = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const rows = await res.json();
-          renderDbChart(rows, range);
-          dbHistoryStatus.textContent = rows.length
+
+          rawPoints = rows.map((r) => ({
+            x: new Date(r.receivedAt),
+            temp: r.temperature,
+            hum: r.humidity,
+          }));
+          fullRange = rawPoints.length
+            ? { min: rawPoints[0].x.getTime(), max: rawPoints[rawPoints.length - 1].x.getTime() }
+            : { min: 0, max: 0 };
+          aggregateEnabled = !NO_AGGREGATE_RANGES.has(range);
+
+          charts.forEach((c) => c.resetZoom("none"));
+          resetZoomBtn.hidden = true;
+          applySeries(currentSeries(fullRange.min, fullRange.max));
+
+          historyStatus.textContent = rows.length
             ? `${rows.length} mesure(s) — ${
-                dbAggregateEnabled
-                  ? "moyenne par tranche de 1% de la période affichée"
-                  : "valeurs brutes (pas d'agrégation)"
-              }. Molette pour zoomer, glisser pour déplacer`
-            : "Aucune donnée sur cette période";
+                aggregateEnabled
+                  ? "moyennées par tranche de 1 % de la période affichée"
+                  : "valeurs brutes"
+              }. Molette pour zoomer, glisser pour déplacer.`
+            : "Aucune donnée sur cette période.";
         } catch (err) {
           console.error(err);
-          dbHistoryStatus.textContent = "Erreur lors du chargement de l'historique";
+          historyStatus.textContent = "Erreur lors du chargement de l'historique.";
+        } finally {
+          panels.classList.remove("is-loading");
         }
       }
 
@@ -601,19 +774,9 @@
         });
       });
 
-      document.getElementById("reset-zoom-btn").addEventListener("click", () => {
-        if (!dbChart) return;
-        dbChart.resetZoom();
-        if (!dbAggregateEnabled) return;
-        const { tempData, humData } = computeBuckets(dbRawPoints, dbFullRange.min, dbFullRange.max);
-        dbChart.data.datasets[0].data = tempData;
-        dbChart.data.datasets[1].data = humData;
-        dbChart.update("none");
-      });
-
       loadHistory("24h");
 
-      // ── Connexion SSE ──
+      // ══════════════ Connexion SSE ══════════════
       function connect() {
         const evtSource = new EventSource("/api/stream");
 
@@ -624,13 +787,13 @@
 
         evtSource.onmessage = (e) => {
           const data = JSON.parse(e.data);
-          statusTx.textContent = "En direct ✓";
-          updateUI(data);
+          statusTx.textContent = "En direct";
+          updateTiles(data);
         };
 
         evtSource.onerror = () => {
           dot.className = "dot disconnected";
-          statusTx.textContent = "Déconnecté — reconnexion dans 3s…";
+          statusTx.textContent = "Déconnecté — reconnexion dans 3 s…";
           evtSource.close();
           setTimeout(connect, 3000);
         };
