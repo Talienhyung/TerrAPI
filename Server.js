@@ -1,8 +1,8 @@
 const express = require('express');
-const cors    = require('cors');
-const path    = require('path');
-
-const app  = express();
+const cors = require('cors');
+const path = require('path');
+const app = express();
+const { sequelize, Measure } = require('./db');
 const PORT = 3000;
 
 app.use(cors());
@@ -15,10 +15,10 @@ app.get('/', (req, res) => {
 
 // Stockage de la dernière mesure
 let lastData = {
-  temperature : null,
-  humidity    : null,
-  timestamp   : null,
-  receivedAt  : null
+  temperature: null,
+  humidity: null,
+  timestamp: null,
+  receivedAt: null
 };
 
 // Clients SSE connectés
@@ -40,18 +40,15 @@ app.post('/api/data', (req, res) => {
     timestamp,
     receivedAt: new Date().toISOString()
   };
+  Measure.create(lastData).catch(console.error);
 
   console.log(`[${lastData.receivedAt}] Temp: ${temperature}°C | Humidité: ${humidity}%`);
 
   // Diffusion aux clients SSE connectés
   const payload = JSON.stringify(lastData);
   sseClients = sseClients.filter(client => {
-    try {
-      client.write(`data: ${payload}\n\n`);
-      return true;
-    } catch {
-      return false;  // Supprime les clients déconnectés
-    }
+    try { client.write(`data: ${payload}\n\n`); return true; }
+    catch { return false; }
   });
 
   res.json({ status: 'ok', clients: sseClients.length });
@@ -68,9 +65,9 @@ app.get('/api/data', (req, res) => {
 // Route SSE : stream temps réel vers le navigateur
 // ─────────────────────────────────────────
 app.get('/api/stream', (req, res) => {
-  res.setHeader('Content-Type',  'text/event-stream');
+  res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection',    'keep-alive');
+  res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
   // Envoi immédiat de la dernière valeur connue
@@ -91,9 +88,20 @@ app.get('/api/stream', (req, res) => {
 // ─────────────────────────────────────────
 // Démarrage du serveur
 // ─────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n✅ Serveur démarré sur http://0.0.0.0:${PORT}`);
   console.log(`   Page web    → http://localhost:${PORT}`);
   console.log(`   API data    → http://localhost:${PORT}/api/data`);
   console.log(`   SSE stream  → http://localhost:${PORT}/api/stream\n`);
+
+  // Test de connexion à la base de données
+  try {
+    await sequelize.authenticate();
+    console.log('Connection has been established successfully.');
+    await sequelize.sync().then(() => {
+      console.log("All models were synchronized successfully.");
+    }).catch(console.error);
+  } catch (error) {
+    console.error('Unable to connect to the database:', error);
+  }
 });
