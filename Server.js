@@ -125,20 +125,21 @@ app.get('/api/stream', (req, res) => {
 // ─────────────────────────────────────────
 // Démarrage du serveur
 // ─────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`\n✅ Serveur démarré sur http://0.0.0.0:${PORT}`);
-  console.log(`   Page web    → http://localhost:${PORT}`);
-  console.log(`   API data    → http://localhost:${PORT}/api/data`);
-  console.log(`   SSE stream  → http://localhost:${PORT}/api/stream\n`);
-
-  // Test de connexion à la base de données
+(async () => {
   try {
     await sequelize.authenticate();
     console.log('Connection has been established successfully.');
-    await sequelize.sync().then(() => {
-      console.log("All models were synchronized successfully.");
-    }).catch(console.error);
+    await sequelize.sync();
+    console.log('All models were synchronized successfully.');
   } catch (error) {
     console.error('Unable to connect to the database:', error);
+    process.exit(1);
   }
-});
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n✅ Serveur démarré sur http://0.0.0.0:${PORT}`);
+    console.log(`   Page web    → http://localhost:${PORT}`);
+    console.log(`   API data    → http://localhost:${PORT}/api/data`);
+    console.log(`   SSE stream  → http://localhost:${PORT}/api/stream\n`);
+  });
+})();

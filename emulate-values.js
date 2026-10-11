@@ -23,7 +23,8 @@ setInterval(() => {
     // Header HTTP
     const headers = { "Content-Type": "application/json" }
     // Corps JSON
-    const body = JSON.stringify({ humidity: parseFloat(humidity), temperature: parseFloat(temperature), timestamp: Math.floor(process.uptime() * 1000) });
+    const battery = parseFloat((Math.random() * 40 + 55).toFixed(1)); // 55–95 %
+    const body = JSON.stringify({ humidity: parseFloat(humidity), temperature: parseFloat(temperature), battery, timestamp: Math.floor(process.uptime() * 1000) });
     // Requête POST
     const req = { method: "POST", headers, body }
     const send = async () => {

@@ -1,7 +1,15 @@
 const dotenv = require('dotenv');
 dotenv.config({ quiet: true });
 const { Sequelize, DataTypes, Model } = require('sequelize');
-const sequelize = new Sequelize(process.env.DATABASE_URL, { logging: false });
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+    logging: false,
+    dialectOptions: {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false,
+        },
+    },
+});
 
 class Measure extends Model { }
 Measure.init(
